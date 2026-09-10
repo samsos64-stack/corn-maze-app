@@ -1,0 +1,11 @@
+{
+  "appId": "io.github.samsos64_stack.twa",
+  "appName": "Corn Maze",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}
