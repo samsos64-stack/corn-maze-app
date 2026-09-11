@@ -1,0 +1,88 @@
+name: Fabriquer le package Android
+
+on:
+  workflow_dispatch:        # se lance à la main, depuis l'onglet Actions
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Récupérer ce dépôt
+        uses: actions/checkout@v4
+
+      - name: Récupérer le jeu depuis le dépôt Maze-run
+        run: |
+          git clone --depth 1 https://github.com/samsos64-stack/Maze-run.git jeu
+          mkdir -p www
+          cp -r jeu/* www/ 2>/dev/null || true
+          rm -rf www/.git jeu
+          ls -la www/
+          echo "--- fichiers essentiels ---"
+          for f in index.html engine3d.js i18n.js manifest.json; do
+            if [ -f "www/$f" ]; then echo "OK  $f"; else echo "MANQUE $f"; fi
+          done
+
+      - name: Installer Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Installer Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Préparer les outils Android
+        uses: android-actions/setup-android@v3
+
+      - name: Installer Capacitor
+        run: npm install
+
+      - name: Créer le projet Android
+        run: |
+          npx cap add android
+          npx cap sync android
+
+      - name: Reconstituer la clé de signature
+        run: |
+          echo "${{ secrets.KEYSTORE_BASE64 }}" | base64 -d > android/app/signing.keystore
+          ls -la android/app/signing.keystore
+
+      - name: Configurer la signature
+        run: |
+          cat >> android/app/build.gradle << 'GRADLE'
+
+android {
+    signingConfigs {
+        release {
+            storeFile file('signing.keystore')
+            storePassword System.getenv("STORE_PASSWORD")
+            keyAlias System.getenv("KEY_ALIAS")
+            keyPassword System.getenv("KEY_PASSWORD")
+        }
+    }
+    buildTypes {
+        release {
+            signingConfig signingConfigs.release
+        }
+    }
+}
+GRADLE
+
+      - name: Fabriquer le bundle signé
+        env:
+          STORE_PASSWORD: ${{ secrets.STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          cd android
+          chmod +x gradlew
+          ./gradlew bundleRelease --stacktrace
+
+      - name: Déposer le résultat
+        uses: actions/upload-artifact@v4
+        with:
+          name: corn-maze-aab
+          path: android/app/build/outputs/bundle/release/*.aab
